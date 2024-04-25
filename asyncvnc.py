@@ -1,4 +1,4 @@
-from asyncio import StreamReader, StreamWriter, open_connection
+from asyncio import StreamReader, StreamWriter, open_connection, IncompleteReadError
 from contextlib import asynccontextmanager, contextmanager, ExitStack
 from dataclasses import dataclass, field
 from enum import Enum
@@ -260,6 +260,58 @@ class Screen:
 
 
 @dataclass
+class StreamZReader:
+    """
+    aio StreamReader wrapper for zlib
+    """
+    reader: StreamReader = field(repr=False)
+    decompress: object = field(repr=False)
+    length: int
+    _head: int = 0
+    _buffer: bytes = b''
+    _zbuffer: bytes = b''
+
+    async def read(self, n: int =-1) -> bytes:
+
+        if n == -1:
+            try:
+                self._zbuffer += await self.reader.readexactly(self.length)
+            except IncompleteReadError as e:
+                self._zbuffer += e.partial
+            self.length = 0
+            rdata = self._buffer[self._head:] + self.decompress.decompress(self._zbuffer)
+            self._buffer = b''
+            self._head = 0
+            self._zbuffer = self.decompress.unconsumed_tail
+            return rdata
+
+        if (n <= 0) or ((len(self._buffer) <= self._head) and (self.length <= 0)):
+            return b''
+
+        while (len(self._buffer) == self._head) and (self.length > 0):
+            ndata = await self.reader.readexactly(self.length)
+            self.length -= len(ndata)
+            self._zbuffer += ndata
+            self._buffer = self.decompress.decompress(self._zbuffer)
+            self._head = 0
+            self._zbuffer = self.decompress.unconsumed_tail
+        rdata = self._buffer[self._head:self._head + n]
+        self._head += len(rdata)
+        return rdata
+
+    async def readexactly(self, n: int) -> bytes:
+        data = b''
+        _n = n
+        while _n > 0:
+            ndata = await self.read(_n)
+            if len(ndata) == 0:
+                raise IncompleteReadError(data, n)
+            data += ndata
+            _n = n - len(data)
+        return data
+
+
+@dataclass
 class Video:
     """
     Video buffer.
@@ -267,7 +319,7 @@ class Video:
 
     reader: StreamReader = field(repr=False)
     writer: StreamWriter = field(repr=False)
-    decompress: Callable[[bytes], bytes] = field(repr=False)
+    decompress: object = field(repr=False)
 
     #: Desktop name.
     name: str
@@ -301,7 +353,7 @@ class Video:
             writer.write(b'\x00\x00\x00\x00\x20\x18\x00\x01\x00\xff'
                          b'\x00\xff\x00\xff\x00\x08\x10\x00\x00\x00')
         writer.write(b'\x02\x00\x00\x01\x00\x00\x00\x06')
-        decompress = decompressobj().decompress
+        decompress = decompressobj()
         return cls(reader, writer, decompress, name, width, height, mode)
 
     def refresh(self, x: int = 0, y: int = 0, width: Optional[int] = None, height: Optional[int] = None):
@@ -329,12 +381,14 @@ class Video:
         height = await read_int(self.reader, 2)
         encoding = await read_int(self.reader, 4)
 
-        if encoding == 0:  # Raw
-            data = await self.reader.readexactly(height * width * 4)
-        elif encoding == 6:  # ZLib
+        if (encoding == 6) or (encoding == 16):
             length = await read_int(self.reader, 4)
-            data = await self.reader.readexactly(length)
-            data = self.decompress(data)
+            _reader = StreamZReader(self.reader, self.decompress, length)
+        else:
+            _reader = self.reader
+
+        if (encoding == 0) or (encoding == 6):  # Raw
+            data = await _reader.readexactly(height * width * 4)
         else:
             raise ValueError(encoding)
 
