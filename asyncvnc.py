@@ -344,6 +344,30 @@ class Video:
             width.to_bytes(2, 'big') +
             height.to_bytes(2, 'big'))
 
+
+    def _update_rect(self, x1: int, x2: int, y1: int, y2: int, data: np.ndarray):
+        """
+        Fills the space of the rectangle with the selected data
+        Accepts various input shapes:
+            HxWx4 -- raw copy
+            1x1x4 -- fills with one color
+            HxWx3 -- adds alpha
+            1x1x3 -- fills with one color and adds alpha
+        """
+
+        if self.data is None:
+            self.data = np.zeros((self.height, self.width, 4), 'B')
+        a_index = self.mode.index('a')
+        if data.shape[2] == 4:
+            self.data[y1:y2, x1:x2, :] = data
+        if data.shape[2] == 3:
+            if a_index:
+                self.data[y1:y2, x1:x2, 0:3] = data
+            else:
+                self.data[y1:y2, x1:x2, 1:4] = data
+        self.data[y1:y2, x1:x2, a_index] = 255
+
+
     async def read(self):
         x = await read_int(self.reader, 2)
         y = await read_int(self.reader, 2)
@@ -360,10 +384,7 @@ class Video:
         else:
             raise ValueError(encoding)
 
-        if self.data is None:
-            self.data = np.zeros((self.height, self.width, 4), 'B')
-        self.data[y:y + height, x:x + width] = np.ndarray((height, width, 4), 'B', data)
-        self.data[y:y + height, x:x + width, self.mode.index('a')] = 255
+        self._update_rect(x, x + width, y, y + height, np.ndarray((height, width, 4), 'B', data))
 
     def as_rgba(self, x: int = 0, y: int = 0, width: Optional[int] = None, height: Optional[int] = None) -> np.ndarray:
         """
