@@ -87,7 +87,7 @@ class Clipboard:
         """
 
         data = text.encode('latin-1')
-        self.writer.write(b'\x06\x00' + len(data).to_bytes(4, 'big') + data)
+        self.writer.write(b'\x06\x00\x00\x00' + len(data).to_bytes(4, 'big') + data)
 
 
 @dataclass
@@ -535,11 +535,11 @@ class UpdateType(Enum):
     #: Video update.
     VIDEO = 0
 
-    #: Clipboard update.
-    CLIPBOARD = 2
-
     #: Bell update.
-    BELL = 3
+    BELL = 2
+
+    #: Clipboard update.
+    CLIPBOARD = 3
 
 
 @dataclass
