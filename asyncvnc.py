@@ -42,6 +42,11 @@ video_modes: Dict[bytes, str] = {
      b'\x20\x18\x01\x01\x00\xff\x00\xff\x00\xff\x00\x08\x10': 'abgr',
 }
 
+video_definition: Dict[str, bytes] = {v: k for k, v in video_modes.items()}
+
+class SupportedEncodings(Enum):
+    ENC_RAW = 0
+    ENC_ZLIB = 6
 
 async def read_int(reader: StreamReader, length: int) -> int:
     """
@@ -350,9 +355,11 @@ class Video:
 
         if mode is None:
             mode = 'rgba'
-            writer.write(b'\x00\x00\x00\x00\x20\x18\x00\x01\x00\xff'
-                         b'\x00\xff\x00\xff\x00\x08\x10\x00\x00\x00')
-        writer.write(b'\x02\x00\x00\x01\x00\x00\x00\x06')
+            writer.write(b'\x00\x00\x00\x00' + video_definition.get(mode) + b'\x00\x00\x00')
+
+        writer.write(b'\x02\x00'+len(SupportedEncodings).to_bytes(length=2))
+        writer.write(b''.join(map(lambda x: x.value.to_bytes(length=4), SupportedEncodings)))
+
         decompress = decompressobj()
         return cls(reader, writer, decompress, name, width, height, mode)
 
