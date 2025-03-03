@@ -48,6 +48,7 @@ class Enc(Enum):
      ZRLE = 16
      TRLE = 15
      ZLIB = 6
+     COPY = 1
      RAW = 0
 
 async def read_int(reader: StreamReader, length: int) -> int:
@@ -586,6 +587,11 @@ class Video:
                     block = await _rle_rle(_reader, cw, ch, subencoding, palette)
                     self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
                 await sleep(0)
+        elif (encoding is Enc.COPY):  # CopyRect
+            srcx = await read_int(self.reader, 2)
+            srcy = await read_int(self.reader, 2)
+#            print(f"Copy Rect {width}x{height} ({srcx},{srcy}) ==> ({x},{y})")
+            self._update_rect(x, x + width, y, y + height, self.data[srcy:srcy + height, srcx:srcx + width, :])
         else:
             raise ValueError(encoding)
 
