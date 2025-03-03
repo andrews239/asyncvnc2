@@ -530,9 +530,6 @@ class Video:
         encoding = Enc(await read_int(self.reader, 4))
         length = height * width * 4
 #        print(f"GET VIDEO REC: {x} {y} {width}x{height} / {encoding}")
-        readtime = 0
-        calctime = 0
-        sleeptime = 0
 
         if (encoding is Enc.RAW) or (encoding is Enc.ZLIB):  # New Raw/zlib
             ff = height * width * 4
