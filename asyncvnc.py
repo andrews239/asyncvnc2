@@ -1,4 +1,4 @@
-from asyncio import StreamReader, StreamWriter, open_connection, IncompleteReadError
+from asyncio import StreamReader, StreamWriter, open_connection, IncompleteReadError, sleep
 from contextlib import asynccontextmanager, contextmanager, ExitStack
 from dataclasses import dataclass, field
 from enum import Enum
@@ -44,9 +44,11 @@ video_modes: Dict[bytes, str] = {
 
 video_definition: Dict[str, bytes] = {v: k for k, v in video_modes.items()}
 
-class SupportedEncodings(Enum):
-    ENC_RAW = 0
-    ENC_ZLIB = 6
+class Enc(Enum):
+     ZRLE = 16
+     TRLE = 15
+     ZLIB = 6
+     RAW = 0
 
 async def read_int(reader: StreamReader, length: int) -> int:
     """
@@ -264,6 +266,9 @@ class Screen:
         return value
 
 
+
+
+
 @dataclass
 class StreamZReader:
     """
@@ -316,6 +321,92 @@ class StreamZReader:
         return data
 
 
+def _tile_1d_gen(tw: int, x: int, w: int):
+    for cx in range(x, x + w - tw + 1, tw):
+        yield (cx, tw)
+    mod = w % tw
+    if mod:
+        yield (x + w - mod, mod)
+
+def _tile_gen(tw: int, th: int, x: int, y: int, w: int, h: int):
+    for (cy, ch) in _tile_1d_gen(th, y, h):
+        for (cx, cw) in _tile_1d_gen(tw, x, w):
+            yield (cx, cy, cw, ch)
+
+async def _rle_len(reader: StreamReader):
+    _pixels = 0
+    while True:
+        n = await read_int(reader, 1)
+        _pixels += n
+        if n != 255:
+            break
+    return _pixels + 1
+
+async def _update_palette(reader: StreamReader, n: int, palette: list = None):
+    pal_bytes = await reader.readexactly(3*n)
+    pal_list = list(pal_bytes[i:i+3] for i in range(0, 3*n, 3))
+    palette.clear()
+    palette.extend(pal_list)
+
+async def _rle_packedbits(reader: StreamReader, cw: int, ch: int, subencoding: int, palette: list) -> bytes:
+    frame = b''
+    if subencoding <= 16:
+        await _update_palette(reader, subencoding, palette)
+    else:
+        subencoding = len(palette)
+
+    if subencoding == 2:
+        bits = 1
+    elif subencoding <= 4:
+        bits = 2
+    else:
+        bits = 4
+    rowlen = (bits * cw + 7) // 8
+    mask = (1 << bits) - 1
+
+    for i in range(ch):
+        row = await reader.readexactly(rowlen)
+        offset = 0
+        rowit = iter(row)
+        for j in range(cw):
+            if offset == 0:
+                offset = 8
+                packcol = next(rowit)
+            offset -= bits
+            frame += palette[(packcol >> offset) & mask]
+    return frame
+
+async def _rle_rle(reader: StreamReader, cw: int, ch: int, subencoding: int, palette: list) -> bytes:
+    frame = b''
+    subencoding -= 128
+    if subencoding > 1:
+        await _update_palette(reader, subencoding, palette)
+    elif subencoding == 1:
+        subencoding = len(palette)
+
+    tile_pixels = ch * cw
+    pixels = 0
+
+    while pixels < tile_pixels:
+        if subencoding:
+            pal_index = await read_int(reader, 1)
+            if pal_index < 128:
+                frame += palette[pal_index]
+                pixels += 1
+                continue
+            else:
+                pal_index -= 128
+                color = palette[pal_index]
+        else:
+            color = await reader.readexactly(3)
+        p = await _rle_len(reader)
+        frame += color * p
+        pixels += p
+    if pixels > tile_pixels:
+        raise ValueError("Too many pixels")
+    return frame
+
+
 @dataclass
 class Video:
     """
@@ -325,6 +416,7 @@ class Video:
     reader: StreamReader = field(repr=False)
     writer: StreamWriter = field(repr=False)
     decompress: object = field(repr=False)
+#    lastrefresh = None;
 
     #: Desktop name.
     name: str
@@ -337,6 +429,9 @@ class Video:
 
     #: Colour channel order.
     mode: str
+
+    #: Serial number
+    serial = 0
 
     #: 3D numpy array of colour data.
     data: Optional[np.ndarray] = None
@@ -357,8 +452,8 @@ class Video:
             mode = 'rgba'
             writer.write(b'\x00\x00\x00\x00' + video_definition.get(mode) + b'\x00\x00\x00')
 
-        writer.write(b'\x02\x00'+len(SupportedEncodings).to_bytes(length=2))
-        writer.write(b''.join(map(lambda x: x.value.to_bytes(length=4), SupportedEncodings)))
+        writer.write(b'\x02\x00'+len(Enc).to_bytes(2, 'big'))
+        writer.write(b''.join(map(lambda x: x.value.to_bytes(4, 'big'), Enc)))
 
         decompress = decompressobj()
         return cls(reader, writer, decompress, name, width, height, mode)
@@ -403,7 +498,6 @@ class Video:
             width.to_bytes(2, 'big') +
             height.to_bytes(2, 'big'))
 
-
     def _update_rect(self, x1: int, x2: int, y1: int, y2: int, data: np.ndarray):
         """
         Fills the space of the rectangle with the selected data
@@ -414,6 +508,7 @@ class Video:
             1x1x3 -- fills with one color and adds alpha
         """
 
+#        print(f"_update_rect {x1} +{x2-x1} {y1} +{y2-y1} {data.shape}")
         if self.data is None:
             self.data = np.zeros((self.height, self.width, 4), 'B')
         a_index = self.mode.index('a')
@@ -425,27 +520,77 @@ class Video:
             else:
                 self.data[y1:y2, x1:x2, 1:4] = data
         self.data[y1:y2, x1:x2, a_index] = 255
-
+        self.serial = (self.serial + 1) & 0xfffffff
 
     async def read(self):
         x = await read_int(self.reader, 2)
         y = await read_int(self.reader, 2)
         width = await read_int(self.reader, 2)
         height = await read_int(self.reader, 2)
-        encoding = await read_int(self.reader, 4)
+        encoding = Enc(await read_int(self.reader, 4))
+        length = height * width * 4
+#        print(f"GET VIDEO REC: {x} {y} {width}x{height} / {encoding}")
+        readtime = 0
+        calctime = 0
+        sleeptime = 0
 
-        if (encoding == 6) or (encoding == 16):
-            length = await read_int(self.reader, 4)
-            _reader = StreamZReader(self.reader, self.decompress, length)
-        else:
-            _reader = self.reader
+        if (encoding is Enc.RAW) or (encoding is Enc.ZLIB):  # New Raw/zlib
+            ff = height * width * 4
 
-        if (encoding == 0) or (encoding == 6):  # Raw
-            data = await _reader.readexactly(height * width * 4)
+            if encoding is Enc.ZLIB:
+                length = await read_int(self.reader, 4)
+#                print(f"lengeth = {length}")
+                _reader = StreamZReader(self.reader, self.decompress, length)
+            else:
+#                print(f"lengeth = {ff}")
+                _reader = self.reader
+
+            (cx, cy) = (x, y)
+            data = b''
+            while ff:
+                newdata = await _reader.read(ff)
+                ff -= len(newdata)
+                data += newdata
+                rows = len(data) // (width * 4)
+                if rows > 0:
+                    await sleep(0)
+                    self._update_rect(cx, cx + width, cy, cy + rows, np.ndarray((rows, width, 4), 'B', data))
+                    cy += rows
+                    data = data[rows * width * 4:]
+                    await sleep(0)
+
+        elif (encoding is Enc.TRLE) or (encoding is Enc.ZRLE):  # New TRLE/ZRLE
+            if encoding == Enc.ZRLE:
+                length = await read_int(self.reader, 4)
+#                print(f"lengeth = {length}")
+                _reader = StreamZReader(self.reader, self.decompress, length)
+                tile_sz = 64
+            else:
+                _reader = self.reader
+                tile_sz = 16
+
+            palette = list()
+
+            for (cx, cy, cw, ch) in _tile_gen(tile_sz, tile_sz, x, y, width, height):
+                subencoding  = await read_int(_reader, 1)
+                await sleep(0)
+                if subencoding == 0:
+                    block = await _reader.readexactly(ch * cw * 3)
+                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
+                elif subencoding == 1:
+                    block = await _reader.readexactly(3)
+                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((1, 1, 3), 'B', block))
+                elif (subencoding <= 16) or (subencoding == 127):
+                    block = await _rle_packedbits(_reader, cw, ch, subencoding, palette)
+                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
+                elif subencoding < 128:
+                    raise ValueError(f"Palette {subencoding} is forbidden")
+                else:
+                    block = await _rle_rle(_reader, cw, ch, subencoding, palette)
+                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
+                await sleep(0)
         else:
             raise ValueError(encoding)
-
-        self._update_rect(x, x + width, y, y + height, np.ndarray((height, width, 4), 'B', data))
 
     def as_rgba(self, x: int = 0, y: int = 0, width: Optional[int] = None, height: Optional[int] = None) -> np.ndarray:
         """
@@ -660,7 +805,9 @@ class Client:
 
         if update_type is UpdateType.VIDEO:
             await self.reader.readexactly(1)  # padding
-            for _ in range(await read_int(self.reader, 2)):
+            cnt = await read_int(self.reader, 2)
+#            print(f"UpdateType.VIDEO count={cnt}")
+            for _ in range(cnt):
                 await self.video.read()
 
         return update_type
