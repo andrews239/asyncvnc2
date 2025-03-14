@@ -1,5 +1,5 @@
 from io import BytesIO
-from asyncvnc import Mouse
+from asyncvnc2 import Mouse
 
 
 def test_hold():

@@ -1,5 +1,5 @@
 from io import BytesIO
-from asyncvnc import Keyboard
+from asyncvnc2 import Keyboard
 
 import pytest
 

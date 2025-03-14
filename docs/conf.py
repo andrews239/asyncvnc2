@@ -17,7 +17,7 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'AsyncVNC'
+project = 'AsyncVNC2'
 copyright = '2021, Barney Gale'
 author = 'Barney Gale'
 

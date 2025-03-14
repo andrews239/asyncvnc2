@@ -1,5 +1,5 @@
 from io import BytesIO
-from asyncvnc import Clipboard
+from asyncvnc2 import Clipboard
 
 
 def test_write():

@@ -1,4 +1,4 @@
-from asyncvnc import Screen
+from asyncvnc2 import Screen
 
 
 def test_slices():

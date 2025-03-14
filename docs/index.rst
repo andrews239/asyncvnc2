@@ -4,7 +4,7 @@
 API reference
 -------------
 
-.. module:: asyncvnc
+.. module:: asyncvnc2
 
 .. autofunction:: connect
 

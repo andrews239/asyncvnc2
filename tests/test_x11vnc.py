@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-import asyncvnc
+import asyncvnc2
 import pytest
 
 
@@ -128,7 +128,7 @@ def test_basic_connection_maybe_auth(
     proc, port, pw = x11vnc
 
     async def run_client():
-        async with asyncvnc.connect(
+        async with asyncvnc2.connect(
             'localhost',
             port=port,
             password=pw,

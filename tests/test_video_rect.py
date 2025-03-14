@@ -1,4 +1,4 @@
-from asyncvnc import Video
+from asyncvnc2 import Video
 import pytest
 
 

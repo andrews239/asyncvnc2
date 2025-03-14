@@ -1,29 +1,26 @@
-AsyncVNC: Asynchronous VNC for Python
+AsyncVNC2: Asynchronous VNC for Python v2
 =====================================
 
 .. image:: https://img.shields.io/badge/source-github-orange
-    :target: https://github.com/barneygale/asyncvnc
+    :target: https://github.com/andrews239/asyncvnc2
 
-.. image:: https://readthedocs.org/projects/asyncvnc/badge/?version=latest&style=flat-square
-    :target: https://asyncvnc.readthedocs.io/en/latest/?badge=latest
+.. image:: https://readthedocs.org/projects/asyncvnc2/badge/?version=latest&style=flat-square
+    :target: https://asyncvnc2.readthedocs.io/en/latest/?badge=latest
 
-.. image:: https://img.shields.io/pypi/v/asyncvnc?style=flat-square
-    :target: https://pypi.org/project/asyncvnc
-
-.. image:: https://github.com/barneygale/asyncvnc/actions/workflows/ci.yml/badge.svg
-    :target: https://github.com/barneygale/asyncvnc/actions
+.. image:: https://img.shields.io/pypi/v/asyncvnc2?style=flat-square
+    :target: https://pypi.org/project/asyncvnc2
 
 
 
-AsyncVNC is a Python package which provides an asynchronous client implementation of the VNC (RFB) protocol on top of
+AsyncVNC2 is a Python package which provides an asynchronous client implementation of the VNC (RFB) protocol on top of
 the asyncio framework.
 
 .. code-block::
 
-    import asyncio, asyncvnc
+    import asyncio, asyncvnc2
 
     async def run_client():
-        with asyncvnc.connect('localhost', 5900, 'username', 'password') as client:
+        with asyncvnc2.connect('localhost', 5900, 'username', 'password') as client:
             client.keyboard.write('hello world!')
 
     asyncio.run(run_client())
@@ -57,9 +54,9 @@ Installation
 
 This package requires Python 3.7+.
 
-Install AsyncVNC by running::
+Install AsyncVNC2 by running::
 
-    pip install asyncvnc
+    pip install asyncvnc2
 
 
 Connecting to a server
@@ -67,17 +64,17 @@ Connecting to a server
 
 This snippet connects to a local unauthenticated VNC server, prints information, and disconnects::
 
-    import asyncio, asyncvnc
+    import asyncio, asyncvnc2
 
     async def run_client():
-        async with asyncvnc.connect('localhost') as client:
+        async with asyncvnc2.connect('localhost') as client:
             print(client)
 
     asyncio.run(run_client())
 
 To log in to a macOS server, supply *username* and *password* arguments::
 
-    async with asyncvnc.connect('localhost', username='user123', password='h4x0r'):
+    async with asyncvnc2.connect('localhost', username='user123', password='h4x0r'):
         ...
 
 For traditional authenticated VNC servers, the *password* argument is required but not *username*.
@@ -90,11 +87,11 @@ For traditional authenticated VNC servers, the *password* argument is required b
 
 To tunnel VNC over SSH, use the AsyncSSH package (after which this package is modelled)::
 
-    import asyncio, asyncssh, asyncvnc
+    import asyncio, asyncssh, asyncvnc2
 
     async def run_client():
         async with asyncssh.connect('myserver') as conn:
-            async with asyncvnc.connect('localhost', opener=conn.open_connection) as client:
+            async with asyncvnc2.connect('localhost', opener=conn.open_connection) as client:
                 print(client)
 
     asyncio.run(run_client())
@@ -129,11 +126,11 @@ Taking a screenshot
 
 To retrieve an image from the VNC server and save it as a PNG file::
 
-    import asyncio, asyncvnc
+    import asyncio, asyncvnc2
     from PIL import Image
 
     async def run_client():
-        async with asyncvnc.connect('localhost') as client:
+        async with asyncvnc2.connect('localhost') as client:
             # Retrieve pixels as a 3D numpy array
             pixels = await client.screenshot()
 
