@@ -1,5 +1,5 @@
 AsyncVNC2: Asynchronous VNC for Python v2
-=====================================
+=========================================
 
 .. image:: https://img.shields.io/badge/source-github-orange
     :target: https://github.com/andrews239/asyncvnc2
