@@ -45,11 +45,25 @@ video_modes: Dict[bytes, str] = {
 video_definition: Dict[str, bytes] = {v: k for k, v in video_modes.items()}
 
 class Enc(Enum):
+     """
+     Supported encodings
+     """
+
+     #: ZRLE encoding.
      ZRLE = 16
+
+     #: TRLE encoding.
      TRLE = 15
+
+     #: Raw encoding with zlib compession.
      ZLIB = 6
+
+     #: CopyRect encoding.
      COPY = 1
+
+     #: Raw encoding.
      RAW = 0
+
 
 async def read_int(reader: StreamReader, length: int) -> int:
     """
@@ -283,6 +297,11 @@ class StreamZReader:
     _zbuffer: bytes = b''
 
     async def read(self, n: int =-1) -> bytes:
+        """
+        Read up to a maximum of n bytes.
+        If n is not provided, or set to -1, read until EOF and return all read bytes.
+        When n is provided, data will be returned as soon as it is available.
+        """
 
         if n == -1:
             try:
@@ -311,6 +330,10 @@ class StreamZReader:
         return rdata
 
     async def readexactly(self, n: int) -> bytes:
+        """
+        Read exactly n bytes.
+        Raise an asyncio.IncompleteReadError if the end of the stream is reached before n can be read.
+        """
         data = b''
         _n = n
         while _n > 0:

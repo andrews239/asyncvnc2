@@ -11,9 +11,6 @@ API reference
 .. autoclass:: Client()
    :members:
 
-.. autoclass:: UpdateType()
-    :members:
-
 .. autoclass:: Clipboard()
     :members:
 
@@ -28,3 +25,13 @@ API reference
 
 .. autoclass:: Screen()
     :members:
+
+.. autoclass:: StreamZReader()
+    :members:
+
+.. autoclass:: UpdateType()
+    :members:
+
+.. autoclass:: Enc()
+    :members:
+

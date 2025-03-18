@@ -18,8 +18,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'AsyncVNC2'
-copyright = '2021, Barney Gale'
-author = 'Barney Gale'
+copyright = '2025, Andrew Shirayev, Barney Gale'
+author = 'Andrew Shirayev'
 
 
 # -- General configuration ---------------------------------------------------

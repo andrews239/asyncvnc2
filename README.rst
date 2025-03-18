@@ -11,6 +11,9 @@ AsyncVNC2: Asynchronous VNC for Python v2
     :target: https://pypi.org/project/asyncvnc2
 
 
+This project is a spin-off from the AsyncVNC project, which is still maintained by Barney Gale.
+    `AsyncVNC by Barney Gale <https://github.com/barneygale/asyncvnc/>`_
+
 
 AsyncVNC2 is a Python package which provides an asynchronous client implementation of the VNC (RFB) protocol on top of
 the asyncio framework.
@@ -46,7 +49,13 @@ Features
 
 - Detection of multi-head frame buffer data using a novel algorithm.
 - Support for tunneling VNC over SSH with AsyncSSH.
-- Support for image data compression with zlib.
+- Support most popular encoding types for image.
+
+  * Raw
+  * CopyRect
+  * zlib
+  * TRLE
+  * ZRLE
 
 
 Installation
