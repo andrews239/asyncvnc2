@@ -388,11 +388,11 @@ async def _rle_packedbits(reader: StreamReader, cw: int, ch: int, subencoding: i
     rowlen = (bits * cw + 7) // 8
     mask = (1 << bits) - 1
 
-    for i in range(ch):
+    for _ in range(ch):
         row = await reader.readexactly(rowlen)
         offset = 0
         rowit = iter(row)
-        for j in range(cw):
+        for _ in range(cw):
             if offset == 0:
                 offset = 8
                 packcol = next(rowit)
@@ -546,6 +546,51 @@ class Video:
         self.data[y1:y2, x1:x2, a_index] = 255
         self.serial = (self.serial + 1) & 0xfffffff
 
+    async def process_raw(self, _reader, x, y, width, height):
+        ff = height * width * 4
+        (cx, cy) = (x, y)
+        data = b''
+        while ff:
+            newdata = await _reader.read(ff)
+            ff -= len(newdata)
+            data += newdata
+            rows = len(data) // (width * 4)
+            if rows > 0:
+                await sleep(0)
+                self._update_rect(cx, cx + width, cy, cy + rows, np.ndarray((rows, width, 4), 'B', data))
+                cy += rows
+                data = data[rows * width * 4:]
+                await sleep(0)
+
+    async def process_xrle(self, _reader, x, y, width, height, tile_sz):
+        palette = list()
+
+        for (cx, cy, cw, ch) in _tile_gen(tile_sz, tile_sz, x, y, width, height):
+            subencoding  = await read_int(_reader, 1)
+            await sleep(0)
+            if subencoding == 0:
+                block = await _reader.readexactly(ch * cw * 3)
+                self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
+            elif subencoding == 1:
+                block = await _reader.readexactly(3)
+                self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((1, 1, 3), 'B', block))
+            elif (subencoding <= 16) or (subencoding == 127):
+                block = await _rle_packedbits(_reader, cw, ch, subencoding, palette)
+                self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
+            elif subencoding < 128:
+                raise ValueError(f"Palette {subencoding} is forbidden")
+            else:
+                block = await _rle_rle(_reader, cw, ch, subencoding, palette)
+                self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
+            await sleep(0)
+
+    async def process_copy(self, _reader, x, y, width, height):
+        srcx = await read_int(_reader, 2)
+        srcy = await read_int(_reader, 2)
+#        print(f"Copy Rect {width}x{height} ({srcx},{srcy}) ==> ({x},{y})")
+        self._update_rect(x, x + width, y, y + height, self.data[srcy:srcy + height, srcx:srcx + width, :])
+
+
     async def read(self):
         x = await read_int(self.reader, 2)
         y = await read_int(self.reader, 2)
@@ -555,66 +600,28 @@ class Video:
         length = height * width * 4
 #        print(f"GET VIDEO REC: {x} {y} {width}x{height} / {encoding}")
 
-        if (encoding is Enc.RAW) or (encoding is Enc.ZLIB):  # New Raw/zlib
-            ff = height * width * 4
+        if encoding is Enc.RAW:
+            await self.process_raw(self.reader,
+                       x, y, width, height)
 
-            if encoding is Enc.ZLIB:
-                length = await read_int(self.reader, 4)
-#                print(f"lengeth = {length}")
-                _reader = StreamZReader(self.reader, self.decompress, length)
-            else:
-#                print(f"lengeth = {ff}")
-                _reader = self.reader
+        elif encoding is Enc.ZLIB:
+            length = await read_int(self.reader, 4)
+            await self.process_raw(StreamZReader(self.reader, self.decompress, length),
+                       x, y, width, height)
 
-            (cx, cy) = (x, y)
-            data = b''
-            while ff:
-                newdata = await _reader.read(ff)
-                ff -= len(newdata)
-                data += newdata
-                rows = len(data) // (width * 4)
-                if rows > 0:
-                    await sleep(0)
-                    self._update_rect(cx, cx + width, cy, cy + rows, np.ndarray((rows, width, 4), 'B', data))
-                    cy += rows
-                    data = data[rows * width * 4:]
-                    await sleep(0)
+        elif encoding is Enc.TRLE:
+            await self.process_xrle(self.reader,
+                       x, y, width, height, 16)
 
-        elif (encoding is Enc.TRLE) or (encoding is Enc.ZRLE):  # New TRLE/ZRLE
-            if encoding == Enc.ZRLE:
-                length = await read_int(self.reader, 4)
-#                print(f"lengeth = {length}")
-                _reader = StreamZReader(self.reader, self.decompress, length)
-                tile_sz = 64
-            else:
-                _reader = self.reader
-                tile_sz = 16
+        elif encoding is Enc.ZRLE:
+            length = await read_int(self.reader, 4)
+            await self.process_xrle(StreamZReader(self.reader, self.decompress, length),
+                       x, y, width, height, 64)
 
-            palette = list()
+        elif encoding is Enc.COPY:
+            await self.process_copy(self.reader,
+                                 x, y, width, height)
 
-            for (cx, cy, cw, ch) in _tile_gen(tile_sz, tile_sz, x, y, width, height):
-                subencoding  = await read_int(_reader, 1)
-                await sleep(0)
-                if subencoding == 0:
-                    block = await _reader.readexactly(ch * cw * 3)
-                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
-                elif subencoding == 1:
-                    block = await _reader.readexactly(3)
-                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((1, 1, 3), 'B', block))
-                elif (subencoding <= 16) or (subencoding == 127):
-                    block = await _rle_packedbits(_reader, cw, ch, subencoding, palette)
-                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
-                elif subencoding < 128:
-                    raise ValueError(f"Palette {subencoding} is forbidden")
-                else:
-                    block = await _rle_rle(_reader, cw, ch, subencoding, palette)
-                    self._update_rect(cx, cx + cw, cy, cy + ch, np.ndarray((ch, cw, 3), 'B', block))
-                await sleep(0)
-        elif (encoding is Enc.COPY):  # CopyRect
-            srcx = await read_int(self.reader, 2)
-            srcy = await read_int(self.reader, 2)
-#            print(f"Copy Rect {width}x{height} ({srcx},{srcy}) ==> ({x},{y})")
-            self._update_rect(x, x + width, y, y + height, self.data[srcy:srcy + height, srcx:srcx + width, :])
         else:
             raise ValueError(encoding)
 
