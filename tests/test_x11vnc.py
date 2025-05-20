@@ -41,7 +41,7 @@ def sig_prog(proc, sig):
 
 @pytest.fixture(
     # password parameteriztion
-    params=[None, 'doggy'],
+    params=['doggy', None],
     ids=lambda param: f'password={param}',
 )
 def x11vnc(
@@ -56,16 +56,16 @@ def x11vnc(
     pw = request.param
     cmdargs = [
         'x11vnc',
-        '-display :1',
+        '-display', ':1',
         '-noxdamage',
         '-noipv6',
         '-forever',
         '-noxdamage',
         '-ncache_cr',
-        f'-rfbport {port}',
+        '-rfbport', f'{port}',
     ]
     if pw:
-        cmdargs.append(f'-passwd {pw}')
+        cmdargs.extend(['-passwd',f'{pw}'])
 
     cli_cmd = ' '.join(cmdargs)
     print(f'\nspawning x11vnc with: {cli_cmd}\n')
@@ -82,7 +82,7 @@ def x11vnc(
         cmdargs,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        shell=True,
+#        shell=True,
         **spkwargs,
     )
 
@@ -122,18 +122,16 @@ def x11vnc(
     sig_prog(proc, _INT_SIGNAL)
 
 
-def test_basic_connection_maybe_auth(
+@pytest.mark.asyncio
+async def test_basic_connection_maybe_auth(
     x11vnc,
 ):
     proc, port, pw = x11vnc
 
-    async def run_client():
-        async with asyncvnc2.connect(
-            'localhost',
-            port=port,
-            password=pw,
+    async with asyncvnc2.connect(
+        'localhost',
+        port=port,
+        password=pw,
+    ) as client:
+        print(client)
 
-        ) as client:
-            print(client)
-
-    asyncio.run(run_client())
