@@ -45,24 +45,82 @@ video_modes: Dict[bytes, str] = {
 video_definition: Dict[str, bytes] = {v: k for k, v in video_modes.items()}
 
 class Enc(Enum):
-     """
-     Supported encodings
-     """
+    """
+    Supported encodings
 
-     #: ZRLE encoding.
-     ZRLE = 16
+    Default priority order is ZRLE, TRLE, ZLIB, COPY, RAW.
 
-     #: TRLE encoding.
-     TRLE = 15
+    """
 
-     #: Raw encoding with zlib compession.
-     ZLIB = 6
+    #: ZRLE encoding.
+    ZRLE = 16
 
-     #: CopyRect encoding.
-     COPY = 1
+    #: TRLE encoding.
+    TRLE = 15
 
-     #: Raw encoding.
-     RAW = 0
+    #: Raw encoding with zlib compession.
+    ZLIB = 6
+
+    #: CopyRect encoding.
+    COPY = 1
+
+    #: Raw encoding.
+    RAW = 0
+
+    @classmethod
+    def default(cls):
+        """
+        Get a list of supported encodings expect RAW.
+        """
+        return filter(lambda x: x.value != 0, cls)
+
+class EncList(list):
+    """
+    A list of Supported encodings and the simple operations:
+
+    "-" -- Exclude from the list
+
+    "+" -- Add to list or rise priority
+
+    EncList()         -- default encoding list
+
+    EncList(Enc.ZLIB) -- encoding list with one encoding
+
+    EncList([Enc.ZLIB,Enc.TRLE]) -- encoding list with two encodings
+
+    EncList() - Enc.ZLIB -- default encoding list except Enc.ZLIB
+
+    EncList() + Enc.ZLIB -- default encoding list with hi-priority of Enc.ZLIB
+    """
+
+    def __init__(self, iterable=None):
+        if iterable is None:
+            super().__init__(Enc.default())
+            return
+        super().__init__([])
+        if isinstance(iterable, Enc):
+            iterable = [ iterable ]
+        try:
+            for x in iterable:
+                if isinstance(x, Enc):
+                    if not x in self:
+                        self.append(x)
+                else:
+                    raise TypeError
+        except TypeError:
+            raise TypeError("Arg must be one of the None or the Enc or the iterable of Enc")
+
+    def __add__(self, other):
+        if isinstance(other, Enc):
+            return EncList([other, *self])
+        return EncList([*other, *self])
+
+    def __sub__(self, other):
+        if isinstance(other, Enc):
+            other = [other]
+        a = filter(lambda x: not x in other, self)
+
+        return EncList(a)
 
 
 async def read_int(reader: StreamReader, length: int) -> int:
@@ -454,6 +512,9 @@ class Video:
     #: Colour channel order.
     mode: str
 
+    #: Allowed encodings list
+    encodings: Optional[list] = None
+
     #: Serial number
     serial = 0
 
@@ -461,7 +522,9 @@ class Video:
     data: Optional[np.ndarray] = None
 
     @classmethod
-    async def create(cls, reader: StreamReader, writer: StreamWriter) -> 'Video':
+    async def create(cls, reader: StreamReader, writer: StreamWriter, encodings: list) -> 'Video':
+        encodings = EncList(encodings)
+
         writer.write(b'\x01')
         width = await read_int(reader, 2)
         height = await read_int(reader, 2)
@@ -476,11 +539,12 @@ class Video:
             mode = 'rgba'
             writer.write(b'\x00\x00\x00\x00' + video_definition.get(mode) + b'\x00\x00\x00')
 
-        writer.write(b'\x02\x00'+len(Enc).to_bytes(2, 'big'))
-        writer.write(b''.join(map(lambda x: x.value.to_bytes(4, 'big'), Enc)))
+        writer.write(b'\x02\x00'+len(encodings).to_bytes(2, 'big'))
+        writer.write(b''.join(map(lambda x: x.value.to_bytes(4, 'big'), encodings)))
 
         decompress = decompressobj()
-        return cls(reader, writer, decompress, name, width, height, mode)
+
+        return cls(reader, writer, decompress, name, width, height, mode, encodings)
 
     def get_rect(self, x: int = 0, y: int = 0, width: Optional[int] = None, height: Optional[int] = None) -> tuple:
         """
@@ -758,7 +822,9 @@ class Client:
             writer: StreamWriter,
             username: Optional[str] = None,
             password: Optional[str] = None,
-            host_key: Optional[rsa.RSAPublicKey] = None) -> 'Client':
+            host_key: Optional[rsa.RSAPublicKey] = None,
+            encodings: Optional[list] = None) -> 'Client':
+
 
         intro = await reader.readline()
         if intro[:4] != b'RFB ':
@@ -816,7 +882,7 @@ class Client:
                 clipboard=Clipboard(writer),
                 keyboard=Keyboard(writer),
                 mouse=Mouse(writer),
-                video=await Video.create(reader, writer))
+                video=await Video.create(reader, writer, encodings))
         elif auth_result == 1:
             raise PermissionError('Auth failed')
         elif auth_result == 2:
@@ -873,6 +939,7 @@ async def connect(
         username: Optional[str] = None,
         password: Optional[str] = None,
         host_key: Optional[rsa.RSAPublicKey] = None,
+        encodings: Optional[list] = None,
         opener=None):
     """
     Make a VNC client connection. This is an async context manager that returns a connected :class:`Client` instance.
@@ -880,7 +947,8 @@ async def connect(
 
     opener = opener or open_connection
     reader, writer = await opener(host, port)
-    client = await Client.create(reader, writer, username, password, host_key)
+
+    client = await Client.create(reader, writer, username, password, host_key, encodings)
     try:
         yield client
     finally:

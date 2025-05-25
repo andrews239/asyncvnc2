@@ -86,6 +86,7 @@ To log in to a macOS server, supply *username* and *password* arguments::
     async with asyncvnc2.connect('localhost', username='user123', password='h4x0r'):
         ...
 
+
 For traditional authenticated VNC servers, the *password* argument is required but not *username*.
 
 .. warning::
@@ -104,6 +105,56 @@ To tunnel VNC over SSH, use the AsyncSSH package (after which this package is mo
                 print(client)
 
     asyncio.run(run_client())
+
+
+Selecting list of acceptable encodings
+--------------------------------------
+
+RAW encoding is always allowed and supported by all sides. Other encodings from the list 
+of supported asyncvnc2 can be controlled by explicitly allowing them or excluding them 
+from the list. And also by raising the priority.
+
+
+Allow all supported encodings in default order::
+
+        async with asyncvnc2.connect('localhost') as client:
+            print(client)
+        async with asyncvnc2.connect('localhost', encodings=None) as client:
+            print(client)
+        async with asyncvnc2.connect('localhost', encodings=EncList()) as client:
+            print(client)
+
+
+Allow only RAW encoding::
+
+        async with asyncvnc2.connect('localhost', encodings=[]) as client:
+            print(client)
+
+Allow RAW and only one non-RAW encoding::
+
+        async with asyncvnc2.connect('localhost', encodings=Enc.ZLIB) as client:
+            print(client)
+
+Allow the encodings list::
+
+        async with asyncvnc2.connect('localhost', encodings=[Enc.ZLIB, Enc.TRLE] ) as client:
+            print(client)
+
+Rise the priority for the ZLIB encoding::
+
+        async with asyncvnc2.connect('localhost', encodings=EncList()+Enc.ZLIB) as client:
+            print(client)
+
+Exclude the ZLIB encoding from the allowed encodings list::
+
+        async with asyncvnc2.connect('localhost', encodings=EncList()-Enc.ZLIB) as client:
+            print(client)
+
+Show the list of the supported encodings::
+
+    import asyncvnc2
+    print(asyncvnc2.EncList())
+
 
 
 Sending events

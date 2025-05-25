@@ -35,3 +35,6 @@ API reference
 .. autoclass:: Enc()
     :members:
 
+.. autoclass:: EncList()
+    :members:
+
