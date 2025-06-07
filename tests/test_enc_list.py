@@ -72,7 +72,6 @@ testsub = [
 ]
 
 def _to_str(val):
-    print(val)
     if val is None:
         return "None"
     if type(val) is list:
