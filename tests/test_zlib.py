@@ -1,5 +1,5 @@
 from io import BytesIO
-from asyncio import StreamReader, run, IncompleteReadError
+from asyncio import StreamReader, IncompleteReadError
 from asyncvnc2 import StreamZReader
 from zlib import compress, decompressobj
 import pytest
