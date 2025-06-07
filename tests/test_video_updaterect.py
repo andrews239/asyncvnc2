@@ -2,7 +2,6 @@ from io import BytesIO
 from asyncvnc2 import Video
 import numpy as np
 import pytest
-import cv2 as cv
 
 
 @pytest.fixture
