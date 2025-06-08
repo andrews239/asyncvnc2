@@ -433,8 +433,10 @@ async def _update_palette(reader: StreamReader, n: int, palette: list = None):
 async def _rle_packedbits(reader: StreamReader, cw: int, ch: int, subencoding: int, palette: list) -> bytes:
     frame = b''
     if subencoding <= 16:
+        # subencoding == 2 .. 16
         await _update_palette(reader, subencoding, palette)
     else:
+        # subencoding == 127
         subencoding = len(palette)
 
     if subencoding == 2:
